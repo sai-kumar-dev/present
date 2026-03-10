@@ -4,7 +4,7 @@ import os
 import argparse
 import time
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 import torch
 import numpy as np
@@ -76,32 +76,16 @@ class MetricsLogger:
         logger.info(f"Epoch logging directory created: {self.epoch_dir}")
 
 
-    def log_batch(self, epoch, batch, total, data, physics):
-
-        batch_file = os.path.join(
-            self.batch_dir,
-            f"batch_{batch:04d}.json"
-        )
-
-        payload = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "epoch": epoch,
-            "batch": batch,
-            "total_loss": float(total),
-            "data_loss": float(data),
-            "physics_loss": float(physics)
-        }
-
-        with open(batch_file, "w") as f:
-            json.dump(payload, f, indent=2)
-
-
     def log_epoch(self, epoch, train, data, physics, val):
 
-        summary_file = os.path.join(
-            self.epoch_dir,
-            "summary.json"
+        epoch_dir = os.path.join(
+            self.epochs_dir,
+            f"epoch_{epoch:03d}"
         )
+
+        os.makedirs(epoch_dir, exist_ok=True)
+
+        summary_file = os.path.join(epoch_dir, "summary.json")
 
         payload = {
             "timestamp": datetime.utcnow().isoformat(),
@@ -114,12 +98,6 @@ class MetricsLogger:
 
         with open(summary_file, "w") as f:
             json.dump(payload, f, indent=2)
-
-        self.history["train_loss"].append(train)
-        self.history["val_loss"].append(val)
-        self.history["data_loss"].append(data)
-        self.history["physics_loss"].append(physics)
-
 
     def save_history(self):
 
