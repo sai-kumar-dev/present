@@ -26,6 +26,10 @@ from viz import (
 MASK_FILE = "ocean_mask.npz"
 
 
+# =========================================================
+# SAFE NUMPY CONVERSION
+# =========================================================
+
 def to_numpy(x):
     if torch.is_tensor(x):
         return x.cpu().numpy()
@@ -33,7 +37,7 @@ def to_numpy(x):
 
 
 # =========================================================
-# METRICS LOGGER (HIERARCHICAL)
+# METRICS LOGGER
 # =========================================================
 
 class MetricsLogger:
@@ -139,7 +143,9 @@ def ensure_ocean_mask():
     logger.info("Checking ocean mask")
 
     if os.path.exists(MASK_FILE):
+
         logger.info("Ocean mask exists")
+
         return
 
     logger.info("Ocean mask missing → building")
@@ -229,8 +235,8 @@ def run_pipeline(args):
 
     logger.info(f"Run directory: {run_dir}")
 
-    # Save args for reproducibility
     args_file = os.path.join(run_dir, "args.json")
+
     with open(args_file, "w") as f:
         json.dump(vars(args), f, indent=2)
 
@@ -264,7 +270,6 @@ def run_pipeline(args):
     global_eda = GlobalEDA(run_dir)
 
     X_val, Y_val = build_validation_dataset(args)
-
     X_test, Y_test, lat_test, lon_test = build_test_dataset(args)
 
     logger.info(f"Validation dataset size: {len(X_val)}")
