@@ -77,6 +77,36 @@ def plot_loss_curves(run_dir):
 # PHYSICS vs DATA LOSS
 # ------------------------------------------------
 
+def plot_all_predictions(y_true, y_pred, run_dir):
+
+    import os
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    fig_dir = os.path.join(run_dir, "plots")
+    os.makedirs(fig_dir, exist_ok=True)
+
+    true_all = y_true.flatten()
+    pred_all = y_pred.flatten()
+
+    plt.figure(figsize=(6,6))
+
+    plt.scatter(true_all, pred_all, s=4, alpha=0.3)
+
+    min_val = min(true_all.min(), pred_all.min())
+    max_val = max(true_all.max(), pred_all.max())
+
+    plt.plot([min_val, max_val], [min_val, max_val], linestyle="--")
+
+    plt.xlabel("Actual Flux")
+    plt.ylabel("Predicted Flux")
+
+    plt.title("All Predictions vs Actual")
+
+    plt.savefig(os.path.join(fig_dir, "all_predictions_vs_actual.png"))
+
+    plt.close()
+
 def plot_physics_data_loss(run_dir):
 
     path = os.path.join(run_dir, "metrics", "training_history.json")
@@ -259,5 +289,6 @@ def generate_all_plots(run_dir):
     plot_loss_curves(run_dir)
 
     plot_physics_data_loss(run_dir)
+    
 
     logger.info("All plots generated")

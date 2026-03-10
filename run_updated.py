@@ -4,7 +4,6 @@ import os
 import argparse
 import time
 import json
-import csv
 from datetime import datetime
 
 import torch
@@ -20,7 +19,8 @@ from viz import (
     generate_all_plots,
     plot_prediction_scatter,
     plot_residuals,
-    plot_flux_map
+    plot_flux_map,
+    plot_all_predictions
 )
 
 MASK_FILE = "ocean_mask.npz"
@@ -32,16 +32,21 @@ def to_numpy(x):
     return x
 
 
+# =========================================================
+# METRICS LOGGER (HIERARCHICAL)
+# =========================================================
+
 class MetricsLogger:
 
     def __init__(self, run_dir):
 
-        self.metrics_dir = os.path.join(run_dir, "metrics")
-        os.makedirs(self.metrics_dir, exist_ok=True)
+        self.run_dir = run_dir
 
-        self.batch_file = os.path.join(self.metrics_dir, "batch_metrics.csv")
-        self.epoch_file = os.path.join(self.metrics_dir, "epoch_metrics.csv")
-        self.json_file = os.path.join(self.metrics_dir, "training_history.json")
+        self.metrics_dir = os.path.join(run_dir, "metrics")
+        self.epochs_dir = os.path.join(run_dir, "epochs")
+
+        os.makedirs(self.metrics_dir, exist_ok=True)
+        os.makedirs(self.epochs_dir, exist_ok=True)
 
         self.history = {
             "train_loss": [],
@@ -50,65 +55,61 @@ class MetricsLogger:
             "physics_loss": []
         }
 
-        logger.info("Initializing metrics logger")
+        logger.info("Metrics logger initialized")
 
-        if not os.path.exists(self.batch_file):
 
-            with open(self.batch_file, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "timestamp",
-                    "epoch",
-                    "batch",
-                    "total_loss",
-                    "data_loss",
-                    "physics_loss"
-                ])
+    def start_epoch(self, epoch):
 
-        if not os.path.exists(self.epoch_file):
+        self.epoch_dir = os.path.join(
+            self.epochs_dir,
+            f"epoch_{epoch:03d}"
+        )
 
-            with open(self.epoch_file, "w", newline="") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "timestamp",
-                    "epoch",
-                    "train_loss",
-                    "data_loss",
-                    "physics_loss",
-                    "val_loss"
-                ])
+        self.batch_dir = os.path.join(self.epoch_dir, "batches")
+
+        os.makedirs(self.batch_dir, exist_ok=True)
+
+        logger.info(f"Epoch logging directory created: {self.epoch_dir}")
 
 
     def log_batch(self, epoch, batch, total, data, physics):
 
-        ts = datetime.utcnow().isoformat()
+        batch_file = os.path.join(
+            self.batch_dir,
+            f"batch_{batch:04d}.json"
+        )
 
-        with open(self.batch_file, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                ts,
-                epoch,
-                batch,
-                total,
-                data,
-                physics
-            ])
+        payload = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "epoch": epoch,
+            "batch": batch,
+            "total_loss": float(total),
+            "data_loss": float(data),
+            "physics_loss": float(physics)
+        }
+
+        with open(batch_file, "w") as f:
+            json.dump(payload, f, indent=2)
 
 
     def log_epoch(self, epoch, train, data, physics, val):
 
-        ts = datetime.utcnow().isoformat()
+        summary_file = os.path.join(
+            self.epoch_dir,
+            "summary.json"
+        )
 
-        with open(self.epoch_file, "a", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                ts,
-                epoch,
-                train,
-                data,
-                physics,
-                val
-            ])
+        payload = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "epoch": epoch,
+            "train_loss": float(train),
+            "data_loss": float(data),
+            "physics_loss": float(physics),
+            "val_loss": float(val)
+        }
+
+        with open(summary_file, "w") as f:
+            json.dump(payload, f, indent=2)
 
         self.history["train_loss"].append(train)
         self.history["val_loss"].append(val)
@@ -116,13 +117,22 @@ class MetricsLogger:
         self.history["physics_loss"].append(physics)
 
 
-    def save_json(self):
+    def save_history(self):
 
-        logger.info("Saving training history JSON")
+        history_file = os.path.join(
+            self.metrics_dir,
+            "training_history.json"
+        )
 
-        with open(self.json_file, "w") as f:
+        with open(history_file, "w") as f:
             json.dump(self.history, f, indent=2)
 
+        logger.info("Training history saved")
+
+
+# =========================================================
+# MASK CHECK
+# =========================================================
 
 def ensure_ocean_mask():
 
@@ -139,6 +149,10 @@ def ensure_ocean_mask():
 
     logger.info("Ocean mask built")
 
+
+# =========================================================
+# DATASET BUILDERS
+# =========================================================
 
 def build_validation_dataset(args):
 
@@ -192,11 +206,15 @@ def build_test_dataset(args):
     return X_test, Y_test, lat, lon
 
 
+# =========================================================
+# PIPELINE
+# =========================================================
+
 def run_pipeline(args):
 
-    logger.info("===================================")
-    logger.info("ERA5 HEAT FLUX PINN PIPELINE START")
-    logger.info("===================================")
+    logger.info("================================================")
+    logger.info("ERA5 HEAT FLUX PINN TRAINING PIPELINE START")
+    logger.info("================================================")
 
     start_time = time.time()
 
@@ -205,9 +223,18 @@ def run_pipeline(args):
 
     ensure_ocean_mask()
 
+    logger.info("Creating run directory")
+
     run_dir = create_run_dir()
 
     logger.info(f"Run directory: {run_dir}")
+
+    # Save args for reproducibility
+    args_file = os.path.join(run_dir, "args.json")
+    with open(args_file, "w") as f:
+        json.dump(vars(args), f, indent=2)
+
+    logger.info("Run arguments saved")
 
     metrics_logger = MetricsLogger(run_dir)
 
@@ -237,16 +264,21 @@ def run_pipeline(args):
     global_eda = GlobalEDA(run_dir)
 
     X_val, Y_val = build_validation_dataset(args)
+
     X_test, Y_test, lat_test, lon_test = build_test_dataset(args)
 
     logger.info(f"Validation dataset size: {len(X_val)}")
     logger.info(f"Test dataset size: {len(X_test)}")
 
+    logger.info("Starting training loop")
+
     for epoch in range(args.epochs):
 
-        logger.info("-----------------------------------")
+        logger.info("------------------------------------------------")
         logger.info(f"Epoch {epoch+1}/{args.epochs}")
-        logger.info("-----------------------------------")
+        logger.info("------------------------------------------------")
+
+        metrics_logger.start_epoch(epoch)
 
         sampler_args = argparse.Namespace(
             sampler=args.sampler,
@@ -259,9 +291,9 @@ def run_pipeline(args):
 
         engine = sampler_run(sampler_args)
 
-        epoch_total=[]
-        epoch_data=[]
-        epoch_phys=[]
+        epoch_total = []
+        epoch_data = []
+        epoch_phys = []
 
         for batch in engine:
 
@@ -288,18 +320,28 @@ def run_pipeline(args):
             epoch_phys.append(losses["physics"])
 
             logger.info(
-                f"loss={losses['total']:.6f} "
+                f"Loss total={losses['total']:.6f} "
                 f"data={losses['data']:.6f} "
                 f"physics={losses['physics']:.6f}"
             )
 
             if batch_id % args.eda_interval == 0:
 
-                logger.info(f"Running EDA for batch {batch_id}")
+                logger.info(f"Running EDA for epoch {epoch} batch {batch_id}")
 
                 try:
 
-                    batch_eda = BatchEDA(batch, run_dir)
+                    eda_dir = os.path.join(
+                        run_dir,
+                        "eda",
+                        "epochs",
+                        f"epoch_{epoch:03d}",
+                        f"batch_{batch_id:03d}"
+                    )
+
+                    os.makedirs(eda_dir, exist_ok=True)
+
+                    batch_eda = BatchEDA(batch, eda_dir)
 
                     batch_eda.run_all()
 
@@ -318,9 +360,9 @@ def run_pipeline(args):
 
             clear_memory()
 
-        epoch_loss=np.mean(epoch_total)
-        epoch_data_loss=np.mean(epoch_data)
-        epoch_phys_loss=np.mean(epoch_phys)
+        epoch_loss = np.mean(epoch_total)
+        epoch_data_loss = np.mean(epoch_data)
+        epoch_phys_loss = np.mean(epoch_phys)
 
         val_loss = trainer.validate(X_val,Y_val)
 
@@ -345,19 +387,21 @@ def run_pipeline(args):
         if epoch % 5 == 0:
             trainer.save_checkpoint(epoch,val_loss)
 
+    logger.info("Training finished")
+
     logger.info("Finalizing global EDA")
 
     global_eda.finalize()
 
     trainer.save_final()
 
-    metrics_logger.save_json()
+    metrics_logger.save_history()
 
     runtime = time.time() - start_time
 
-    logger.info(f"Training finished in {runtime/60:.2f} minutes")
+    logger.info(f"Training runtime: {runtime/60:.2f} minutes")
 
-    logger.info("Running final test evaluation")
+    logger.info("Running final model evaluation")
 
     model = trainer.model
     model.eval()
@@ -365,6 +409,7 @@ def run_pipeline(args):
     with torch.no_grad():
 
         X_t = torch.tensor(X_test,dtype=torch.float32).to(device)
+
         pred = model(X_t).cpu().numpy()
 
     logger.info("Generating evaluation plots")
@@ -373,11 +418,18 @@ def run_pipeline(args):
     plot_residuals(Y_test,pred,run_dir)
     plot_flux_map(lat_test,lon_test,pred[:,0],run_dir,name="sshf_map")
     plot_flux_map(lat_test,lon_test,pred[:,1],run_dir,name="slhf_map")
+    plot_all_predictions(Y_test,pred,run_dir)
 
     generate_all_plots(run_dir)
 
-    logger.info("Pipeline complete")
+    logger.info("================================================")
+    logger.info("PIPELINE COMPLETE")
+    logger.info("================================================")
 
+
+# =========================================================
+# ARGUMENTS
+# =========================================================
 
 def main():
 
