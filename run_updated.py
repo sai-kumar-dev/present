@@ -26,9 +26,11 @@ from viz import (
 MASK_FILE = "ocean_mask.npz"
 
 
-# =========================================================
-# METRICS LOGGER
-# =========================================================
+def to_numpy(x):
+    if torch.is_tensor(x):
+        return x.cpu().numpy()
+    return x
+
 
 class MetricsLogger:
 
@@ -54,7 +56,6 @@ class MetricsLogger:
 
             with open(self.batch_file, "w", newline="") as f:
                 writer = csv.writer(f)
-
                 writer.writerow([
                     "timestamp",
                     "epoch",
@@ -68,7 +69,6 @@ class MetricsLogger:
 
             with open(self.epoch_file, "w", newline="") as f:
                 writer = csv.writer(f)
-
                 writer.writerow([
                     "timestamp",
                     "epoch",
@@ -84,9 +84,7 @@ class MetricsLogger:
         ts = datetime.utcnow().isoformat()
 
         with open(self.batch_file, "a", newline="") as f:
-
             writer = csv.writer(f)
-
             writer.writerow([
                 ts,
                 epoch,
@@ -102,9 +100,7 @@ class MetricsLogger:
         ts = datetime.utcnow().isoformat()
 
         with open(self.epoch_file, "a", newline="") as f:
-
             writer = csv.writer(f)
-
             writer.writerow([
                 ts,
                 epoch,
@@ -128,10 +124,6 @@ class MetricsLogger:
             json.dump(self.history, f, indent=2)
 
 
-# =========================================================
-# MASK CREATION
-# =========================================================
-
 def ensure_ocean_mask():
 
     logger.info("Checking ocean mask")
@@ -145,20 +137,16 @@ def ensure_ocean_mask():
     import build
     build.main()
 
-    logger.info("Ocean mask created")
+    logger.info("Ocean mask built")
 
 
-# =========================================================
-# VALIDATION DATASET
-# =========================================================
+def build_validation_dataset(args):
 
-def build_validation_dataset(args, samples=40000):
-
-    logger.info("Building validation dataset")
+    logger.info("Generating validation dataset")
 
     val_args = argparse.Namespace(
         sampler=args.sampler,
-        batch_size=samples,
+        batch_size=args.val_size,
         batches=1,
         start_year=args.val_start_year,
         end_year=args.val_end_year,
@@ -169,25 +157,21 @@ def build_validation_dataset(args, samples=40000):
 
     batch = next(engine)
 
-    X_val = batch["X"].numpy()
-    Y_val = batch["Y"].numpy()
+    X_val = to_numpy(batch["X"])
+    Y_val = to_numpy(batch["Y"])
 
-    logger.info(f"Validation dataset ready: {len(X_val)} samples")
+    logger.info(f"Validation samples: {len(X_val)}")
 
     return X_val, Y_val
 
 
-# =========================================================
-# TEST DATASET
-# =========================================================
+def build_test_dataset(args):
 
-def build_test_dataset(args, samples=60000):
-
-    logger.info("Building test dataset")
+    logger.info("Generating test dataset")
 
     test_args = argparse.Namespace(
         sampler=args.sampler,
-        batch_size=samples,
+        batch_size=args.test_size,
         batches=1,
         start_year=args.test_start_year,
         end_year=args.test_end_year,
@@ -198,20 +182,15 @@ def build_test_dataset(args, samples=60000):
 
     batch = next(engine)
 
-    X_test = batch["X"].numpy()
-    Y_test = batch["Y"].numpy()
+    X_test = to_numpy(batch["X"])
+    Y_test = to_numpy(batch["Y"])
+    lat = to_numpy(batch["lat"])
+    lon = to_numpy(batch["lon"])
 
-    lat = batch["lat"].numpy()
-    lon = batch["lon"].numpy()
-
-    logger.info(f"Test dataset ready: {len(X_test)} samples")
+    logger.info(f"Test samples: {len(X_test)}")
 
     return X_test, Y_test, lat, lon
 
-
-# =========================================================
-# MAIN PIPELINE
-# =========================================================
 
 def run_pipeline(args):
 
@@ -226,8 +205,6 @@ def run_pipeline(args):
 
     ensure_ocean_mask()
 
-    logger.info("Creating run directory")
-
     run_dir = create_run_dir()
 
     logger.info(f"Run directory: {run_dir}")
@@ -236,8 +213,7 @@ def run_pipeline(args):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    logger.info(f"Compute device: {device}")
-
+    logger.info(f"Using device: {device}")
 
     logger.info("Initializing model")
 
@@ -256,18 +232,15 @@ def run_pipeline(args):
         run_dir=run_dir
     )
 
-    logger.info("Model ready")
-
+    logger.info("Model initialized")
 
     global_eda = GlobalEDA(run_dir)
 
-
     X_val, Y_val = build_validation_dataset(args)
-
     X_test, Y_test, lat_test, lon_test = build_test_dataset(args)
 
-
-    logger.info("Starting training loop")
+    logger.info(f"Validation dataset size: {len(X_val)}")
+    logger.info(f"Test dataset size: {len(X_test)}")
 
     for epoch in range(args.epochs):
 
@@ -294,7 +267,7 @@ def run_pipeline(args):
 
             batch_id = batch.get("batch",0)+1
 
-            logger.info(f"Processing batch {batch_id}")
+            logger.info(f"Training batch {batch_id}")
 
             losses = trainer.train_batch(
                 batch["X"],
@@ -315,10 +288,33 @@ def run_pipeline(args):
             epoch_phys.append(losses["physics"])
 
             logger.info(
-                f"Loss total={losses['total']:.6f} "
+                f"loss={losses['total']:.6f} "
                 f"data={losses['data']:.6f} "
                 f"physics={losses['physics']:.6f}"
             )
+
+            if batch_id % args.eda_interval == 0:
+
+                logger.info(f"Running EDA for batch {batch_id}")
+
+                try:
+
+                    batch_eda = BatchEDA(batch, run_dir)
+
+                    batch_eda.run_all()
+
+                    global_eda.add_batch(
+                        batch_eda.lat,
+                        batch_eda.lon,
+                        batch_eda.flux,
+                        batch_eda.wind,
+                        batch_eda.time,
+                        batch_eda.X_raw,
+                        batch_eda.Y_raw
+                    )
+
+                except Exception as e:
+                    logger.warning(f"EDA failed: {e}")
 
             clear_memory()
 
@@ -326,16 +322,15 @@ def run_pipeline(args):
         epoch_data_loss=np.mean(epoch_data)
         epoch_phys_loss=np.mean(epoch_phys)
 
+        val_loss = trainer.validate(X_val,Y_val)
+
         logger.info(
             f"Epoch summary → "
             f"train={epoch_loss:.6f} "
             f"data={epoch_data_loss:.6f} "
-            f"physics={epoch_phys_loss:.6f}"
+            f"physics={epoch_phys_loss:.6f} "
+            f"val={val_loss:.6f}"
         )
-
-        val_loss = trainer.validate(X_val,Y_val)
-
-        logger.info(f"Validation loss: {val_loss:.6f}")
 
         metrics_logger.log_epoch(
             epoch,
@@ -350,45 +345,39 @@ def run_pipeline(args):
         if epoch % 5 == 0:
             trainer.save_checkpoint(epoch,val_loss)
 
+    logger.info("Finalizing global EDA")
 
-    logger.info("Training complete")
+    global_eda.finalize()
+
+    trainer.save_final()
 
     metrics_logger.save_json()
 
-    logger.info("Running final evaluation")
+    runtime = time.time() - start_time
 
+    logger.info(f"Training finished in {runtime/60:.2f} minutes")
+
+    logger.info("Running final test evaluation")
+
+    model = trainer.model
     model.eval()
 
     with torch.no_grad():
 
-        X_t = torch.tensor(X_test, dtype=torch.float32).to(device)
-
+        X_t = torch.tensor(X_test,dtype=torch.float32).to(device)
         pred = model(X_t).cpu().numpy()
 
     logger.info("Generating evaluation plots")
 
-    plot_prediction_scatter(Y_test, pred, run_dir)
-
-    plot_residuals(Y_test, pred, run_dir)
-
-    plot_flux_map(lat_test, lon_test, pred[:,0], run_dir, name="sshf_map")
-
-    plot_flux_map(lat_test, lon_test, pred[:,1], run_dir, name="slhf_map")
+    plot_prediction_scatter(Y_test,pred,run_dir)
+    plot_residuals(Y_test,pred,run_dir)
+    plot_flux_map(lat_test,lon_test,pred[:,0],run_dir,name="sshf_map")
+    plot_flux_map(lat_test,lon_test,pred[:,1],run_dir,name="slhf_map")
 
     generate_all_plots(run_dir)
 
-    runtime = time.time() - start_time
+    logger.info("Pipeline complete")
 
-    logger.info(f"Pipeline finished in {runtime/60:.2f} minutes")
-
-    logger.info("===================================")
-    logger.info("PIPELINE COMPLETE")
-    logger.info("===================================")
-
-
-# =========================================================
-# ARGUMENTS
-# =========================================================
 
 def main():
 
@@ -410,14 +399,23 @@ def main():
     parser.add_argument("--test_start_year",type=int,default=2019)
     parser.add_argument("--test_end_year",type=int,default=2020)
 
+    parser.add_argument("--val_size",type=int,default=40000)
+    parser.add_argument("--test_size",type=int,default=60000)
+
     parser.add_argument("--hidden_dim",type=int,default=256)
     parser.add_argument("--num_layers",type=int,default=5)
 
     parser.add_argument("--learning_rate",type=float,default=1e-3)
-
     parser.add_argument("--lambda_physics",type=float,default=0.1)
 
     parser.add_argument("--seed",type=int,default=42)
+
+    parser.add_argument(
+        "--eda_interval",
+        type=int,
+        default=3,
+        help="Run batch EDA every N batches"
+    )
 
     args = parser.parse_args()
 
