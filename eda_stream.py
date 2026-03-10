@@ -36,24 +36,35 @@ plt.rcParams["savefig.bbox"]="tight"
 
 def create_run_dir(base="runs"):
 
-    os.makedirs(base,exist_ok=True)
+    os.makedirs(base, exist_ok=True)
 
-    ts=datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    pid=os.getpid()
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    pid = os.getpid()
 
-    run_dir=os.path.join(base,f"run_{ts}_{pid}")
+    run_dir = os.path.join(base, f"run_{ts}_{pid}")
 
-    os.makedirs(run_dir,exist_ok=True)
-    os.makedirs(os.path.join(run_dir,"logs"),exist_ok=True)
+    os.makedirs(run_dir, exist_ok=True)
 
-    meta={
-        "created":now(),
-        "hostname":socket.gethostname(),
-        "pid":pid
+    # core directories
+    os.makedirs(os.path.join(run_dir, "logs"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "metrics"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "epochs"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "plots"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "models"), exist_ok=True)
+
+    # EDA hierarchy
+    os.makedirs(os.path.join(run_dir, "eda"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "eda", "epochs"), exist_ok=True)
+    os.makedirs(os.path.join(run_dir, "eda", "global"), exist_ok=True)
+
+    meta = {
+        "created": now(),
+        "hostname": socket.gethostname(),
+        "pid": pid
     }
 
-    with open(os.path.join(run_dir,"run_metadata.json"),"w") as f:
-        json.dump(meta,f,indent=2)
+    with open(os.path.join(run_dir, "run_metadata.json"), "w") as f:
+        json.dump(meta, f, indent=2)
 
     return run_dir
 
