@@ -75,6 +75,34 @@ class MetricsLogger:
 
         logger.info(f"Epoch logging directory created: {self.epoch_dir}")
 
+    def log_batch(self, epoch, batch, total, data, physics):
+
+        # ensure epoch directory exists
+        epoch_dir = os.path.join(
+            self.epochs_dir,
+            f"epoch_{epoch:03d}"
+        )
+
+        batch_dir = os.path.join(epoch_dir, "batches")
+
+        os.makedirs(batch_dir, exist_ok=True)
+
+        batch_file = os.path.join(
+            batch_dir,
+            f"batch_{batch:04d}.json"
+        )
+
+        payload = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "epoch": epoch,
+            "batch": batch,
+            "total_loss": float(total),
+            "data_loss": float(data),
+            "physics_loss": float(physics)
+        }
+
+        with open(batch_file, "w") as f:
+            json.dump(payload, f, indent=2)
 
     def log_epoch(self, epoch, train, data, physics, val):
 
