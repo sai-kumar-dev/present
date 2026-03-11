@@ -252,7 +252,7 @@ def run_pipeline(args):
 
     run_logger.info("Run arguments saved")
 
-    metrics_run_logger = Metricsrun_Logger(run_dir)
+    metrics_run_logger = MetricsLogger(run_dir)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
