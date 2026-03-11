@@ -230,7 +230,12 @@ def build_test_dataset(args):
 # =========================================================
 
 def run_pipeline(args):
+    run_dir = create_run_dir()
 
+    # initialize logger AFTER run dir exists
+    from core import create_logger
+    logger = create_logger(run_dir)
+    
     logger.info("================================================")
     logger.info("ERA5 HEAT FLUX PINN TRAINING PIPELINE START")
     logger.info("================================================")
@@ -243,12 +248,6 @@ def run_pipeline(args):
     ensure_ocean_mask()
 
     logger.info("Creating run directory")
-
-    run_dir = create_run_dir()
-
-    # initialize logger AFTER run dir exists
-    from core import create_logger
-    logger = create_logger(run_dir)
 
     logger.info(f"Run directory: {run_dir}")
 
