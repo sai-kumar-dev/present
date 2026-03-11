@@ -95,7 +95,10 @@ def log(run_dir,msg):
 
     print(line,flush=True)
 
-    with open(os.path.join(run_dir,"logs","eda.log"),"a") as f:
+    log_dir=os.path.join(run_dir,"logs")
+    os.makedirs(log_dir,exist_ok=True)
+
+    with open(os.path.join(log_dir,"eda.log"),"a") as f:
         f.write(line+"\n")
 
 
@@ -128,8 +131,8 @@ class BatchEDA:
 
         self.batch_id=batch["batch"]+1
 
-        self.X=batch["X"].cpu().numpy()
-        self.Y=batch["Y"].cpu().numpy()
+        self.X=batch["X"]
+        self.Y=batch["Y"]
 
         self.lat=np.asarray(batch["lat"])
         self.lon=np.asarray(batch["lon"])

@@ -314,6 +314,8 @@ def run(args):
 
                     paths=index[key]
 
+                    ds=load_dataset(paths["instant"])
+
                     t=rng.integers(ds.sizes[tdim])
 
                     grid_idx=rng.integers(0, GRID, BLOCK)
@@ -474,8 +476,8 @@ def run(args):
 
         logger.info(f"Sampler batch {b+1} END | duration {duration:.2f}s | samples {len(X)}")
         yield {
-            "X":torch.from_numpy(X),
-            "Y":torch.from_numpy(Y),
+            "X": X,
+            "Y": Y,
             "lat":lat_batch,
             "lon":lon_batch,
             "time":time_batch,

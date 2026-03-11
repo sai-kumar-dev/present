@@ -89,10 +89,11 @@ class PINNTrainer:
 
         λ = self.physics_weight(epoch)
 
-        total_loss = data_loss + λ * phys_loss
-
+        phys_scaled = phys_loss / (phys_loss.detach() + 1e-6)
+        total_loss = data_loss + λ * phys_scaled
+        
         total_loss.backward()
-
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(),1.0)
         self.optimizer.step()
 
         return {
@@ -241,10 +242,17 @@ class PINNTrainer:
 
             losses = self.train_batch(X, Y, epoch)
 
-            epoch_loss += losses["total"]
+            epoch_total += losses["total"]
+            epoch_data += losses["data"]
+            epoch_phys += losses["physics"]
 
         epoch_loss /= len(dataloader)
-
+        epoch_total /= len(dataloader)
+        epoch_data /= len(dataloader)
+        epoch_phys /= len(dataloader)
+        self.train_history.append(epoch_total)
+        self.data_history.append(epoch_data)
+        self.physics_history.append(epoch_phys)
         self.train_history.append(epoch_loss)
 
         return epoch_loss

@@ -4,7 +4,9 @@ import os
 import argparse
 import time
 import json
-from datetime import UTC, datetime
+from datetime import timezone, datetime
+from torch.utils.data import DataLoader
+from dataset import SamplerDataset
 
 import torch
 import numpy as np
@@ -13,7 +15,9 @@ from sampler import run as sampler_run
 from eda_stream import BatchEDA, GlobalEDA, create_run_dir
 from model import OceanHeatFluxPINN
 from train import PINNTrainer
-from core import logger, clear_memory
+from core import create_logger, clear_memory
+
+
 
 from viz import (
     generate_all_plots,
@@ -93,7 +97,7 @@ class MetricsLogger:
         )
 
         payload = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "epoch": epoch,
             "batch": batch,
             "total_loss": float(total),
@@ -112,11 +116,14 @@ class MetricsLogger:
         )
 
         os.makedirs(epoch_dir, exist_ok=True)
-
+        self.history["train_loss"].append(float(train))
+        self.history["data_loss"].append(float(data))
+        self.history["physics_loss"].append(float(physics))
+        self.history["val_loss"].append(float(val))
         summary_file = os.path.join(epoch_dir, "summary.json")
 
         payload = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "epoch": epoch,
             "train_loss": float(train),
             "data_loss": float(data),
@@ -239,6 +246,10 @@ def run_pipeline(args):
 
     run_dir = create_run_dir()
 
+    # initialize logger AFTER run dir exists
+    from core import create_logger
+    logger = create_logger(run_dir)
+
     logger.info(f"Run directory: {run_dir}")
 
     args_file = os.path.join(run_dir, "args.json")
@@ -259,7 +270,6 @@ def run_pipeline(args):
     model = OceanHeatFluxPINN(
         input_dim=7,
         hidden_dim=args.hidden_dim,
-        output_dim=2,
         num_layers=args.num_layers
     )
 
@@ -275,7 +285,12 @@ def run_pipeline(args):
 
     global_eda = GlobalEDA(run_dir)
 
+    logger.info("Building validation dataset")
+
     X_val, Y_val = build_validation_dataset(args)
+
+    logger.info("Building test dataset")
+
     X_test, Y_test, lat_test, lon_test = build_test_dataset(args)
 
     logger.info(f"Validation dataset size: {len(X_val)}")
@@ -300,21 +315,32 @@ def run_pipeline(args):
             seed=args.seed + epoch
         )
 
-        engine = sampler_run(sampler_args)
+        dataset = SamplerDataset(sampler_args)
+
+        loader = DataLoader(
+            dataset,
+            batch_size=None,
+            num_workers=2
+        )
 
         epoch_total = []
         epoch_data = []
         epoch_phys = []
 
-        for batch in engine:
+        batch_id = 0
 
-            batch_id = batch.get("batch",0)+1
+        for batch in loader:
+
+            batch_id += 1
+
+            X = batch["X"]
+            Y = batch["Y"]
 
             logger.info(f"Training batch {batch_id}")
 
             losses = trainer.train_batch(
-                batch["X"],
-                batch["Y"],
+                X,
+                Y,
                 epoch
             )
 
@@ -336,23 +362,17 @@ def run_pipeline(args):
                 f"physics={losses['physics']:.6f}"
             )
 
+            # -------- EDA --------
+
             if batch_id % args.eda_interval == 0:
 
-                logger.info(f"Running EDA for epoch {epoch} batch {batch_id}")
+                logger.info(
+                    f"Running EDA for epoch {epoch} batch {batch_id}"
+                )
 
                 try:
 
-                    eda_dir = os.path.join(
-                        run_dir,
-                        "eda",
-                        "epochs",
-                        f"epoch_{epoch:03d}",
-                        f"batch_{batch_id:03d}"
-                    )
-
-                    os.makedirs(eda_dir, exist_ok=True)
-
-                    batch_eda = BatchEDA(batch, eda_dir)
+                    batch_eda = BatchEDA(batch, run_dir)
 
                     batch_eda.run_all()
 
@@ -367,15 +387,18 @@ def run_pipeline(args):
                     )
 
                 except Exception as e:
+
                     logger.warning(f"EDA failed: {e}")
 
             clear_memory()
 
-        epoch_loss = np.mean(epoch_total)
-        epoch_data_loss = np.mean(epoch_data)
-        epoch_phys_loss = np.mean(epoch_phys)
+        # ----- epoch statistics -----
 
-        val_loss = trainer.validate(X_val,Y_val)
+        epoch_loss = np.mean(epoch_total) if epoch_total else 0
+        epoch_data_loss = np.mean(epoch_data) if epoch_data else 0
+        epoch_phys_loss = np.mean(epoch_phys) if epoch_phys else 0
+
+        val_loss = trainer.validate(X_val, Y_val)
 
         logger.info(
             f"Epoch summary → "
@@ -396,13 +419,18 @@ def run_pipeline(args):
         trainer.save_best(val_loss)
 
         if epoch % 5 == 0:
-            trainer.save_checkpoint(epoch,val_loss)
+            trainer.save_checkpoint(epoch, val_loss)
+
+    # ---------- TRAINING COMPLETE ----------
 
     logger.info("Training finished")
 
     logger.info("Finalizing global EDA")
 
-    global_eda.finalize()
+    try:
+        global_eda.finalize()
+    except Exception as e:
+        logger.warning(f"Global EDA failed: {e}")
 
     trainer.save_final()
 
@@ -412,6 +440,8 @@ def run_pipeline(args):
 
     logger.info(f"Training runtime: {runtime/60:.2f} minutes")
 
+    # ---------- MODEL EVALUATION ----------
+
     logger.info("Running final model evaluation")
 
     model = trainer.model
@@ -419,25 +449,23 @@ def run_pipeline(args):
 
     with torch.no_grad():
 
-        X_t = torch.tensor(X_test,dtype=torch.float32).to(device)
+        X_t = torch.tensor(X_test, dtype=torch.float32).to(device)
 
         pred = model(X_t).cpu().numpy()
 
     logger.info("Generating evaluation plots")
 
-    plot_prediction_scatter(Y_test,pred,run_dir)
-    plot_residuals(Y_test,pred,run_dir)
-    plot_flux_map(lat_test,lon_test,pred[:,0],run_dir,name="sshf_map")
-    plot_flux_map(lat_test,lon_test,pred[:,1],run_dir,name="slhf_map")
-    plot_all_predictions(Y_test,pred,run_dir)
+    plot_prediction_scatter(Y_test, pred, run_dir)
+    plot_residuals(Y_test, pred, run_dir)
+    plot_flux_map(lat_test, lon_test, pred[:,0], run_dir, name="sshf_map")
+    plot_flux_map(lat_test, lon_test, pred[:,1], run_dir, name="slhf_map")
+    plot_all_predictions(Y_test, pred, run_dir)
 
     generate_all_plots(run_dir)
 
     logger.info("================================================")
     logger.info("PIPELINE COMPLETE")
-    logger.info("================================================")
-
-
+    logger.info("================================================")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
 # =========================================================
 # ARGUMENTS
 # =========================================================
