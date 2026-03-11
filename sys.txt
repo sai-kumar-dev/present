@@ -1,0 +1,52 @@
+(era5_pinn) [nrsc@localhost present]$ cat sys_info.txt
+
+==============================
+SYSTEM ENVIRONMENT DETAILS
+==============================
+
+Operating System:
+Linux-4.18.0-553.el8_10.x86_64-x86_64-with-glibc2.28
+
+CPU Information:
+CPU(s):              8
+On-line CPU(s) list: 0-7
+Core(s) per socket:  4
+Socket(s):           2
+Model name:          AMD EPYC-Rome-v4 Processor (no XSAVES)
+NUMA node0 CPU(s):   0-7
+
+Memory Information:
+              total        used        free      shared  buff/cache   available
+Mem:           31Gi       1.5Gi       4.4Gi       386Mi        25Gi        28Gi
+Swap:         7.8Gi       1.6Gi       6.2Gi
+
+
+GPU Information:
+No NVIDIA GPU detected
+
+Python Environment:
+Python version: 3.10.19
+
+PyTorch Information:
+PyTorch version: 2.5.1
+CUDA available: False
+
+Disk Usage:
+Filesystem             Size  Used Avail Use% Mounted on
+devtmpfs                16G     0   16G   0% /dev
+tmpfs                   16G  104K   16G   1% /dev/shm
+tmpfs                   16G  1.7G   14G  11% /run
+tmpfs                   16G     0   16G   0% /sys/fs/cgroup
+/dev/mapper/rhel-root  125G   36G   90G  29% /
+/dev/mapper/rhel-home   80G   21G   60G  26% /home
+/dev/sda2             1014M  274M  741M  27% /boot
+/dev/sda1              599M  5.9M  593M   1% /boot/efi
+tmpfs                  3.2G   12K  3.2G   1% /run/user/42
+/dev/sda4              1.8T  1.1T  761G  58% /data
+tmpfs                  3.2G   12K  3.2G   1% /run/user/1000
+
+
+==============================
+END OF SYSTEM REPORT
+==============================
+(era5_pinn) [nrsc@localhost present]$
