@@ -171,6 +171,8 @@ def ensure_ocean_mask():
 
 def build_validation_dataset(args):
 
+    import gc
+
     logger.info("Generating validation dataset")
 
     val_args = argparse.Namespace(
@@ -186,15 +188,22 @@ def build_validation_dataset(args):
 
     batch = next(engine)
 
-    X_val = to_numpy(batch["X"])
-    Y_val = to_numpy(batch["Y"])
+    X_val = to_numpy(batch["X"]).astype("float32")
+    Y_val = to_numpy(batch["Y"]).astype("float32")
+
+    # destroy sampler and batch buffers
+    del batch
+    del engine
+
+    gc.collect()
 
     logger.info(f"Validation samples: {len(X_val)}")
 
     return X_val, Y_val
 
-
 def build_test_dataset(args):
+
+    import gc
 
     logger.info("Generating test dataset")
 
@@ -211,15 +220,19 @@ def build_test_dataset(args):
 
     batch = next(engine)
 
-    X_test = to_numpy(batch["X"])
-    Y_test = to_numpy(batch["Y"])
-    lat = to_numpy(batch["lat"])
-    lon = to_numpy(batch["lon"])
+    X_test = to_numpy(batch["X"]).astype("float32")
+    Y_test = to_numpy(batch["Y"]).astype("float32")
+    lat = to_numpy(batch["lat"]).astype("float32")
+    lon = to_numpy(batch["lon"]).astype("float32")
+
+    del batch
+    del engine
+
+    gc.collect()
 
     logger.info(f"Test samples: {len(X_test)}")
 
     return X_test, Y_test, lat, lon
-
 
 # =========================================================
 # PIPELINE
@@ -314,7 +327,7 @@ def run_pipeline(args):
         loader = DataLoader(
             dataset,
             batch_size=None,
-            num_workers=2
+            num_workers=0
         )
 
         epoch_total = []
