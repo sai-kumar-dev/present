@@ -15,9 +15,7 @@ from sampler import run as sampler_run
 from eda_stream import BatchEDA, GlobalEDA, create_run_dir
 from model import OceanHeatFluxPINN
 from train import PINNTrainer
-from core import create_logger, clear_memory
-
-
+from core import logger, create_logger, clear_memory
 
 from viz import (
     generate_all_plots,
@@ -29,7 +27,6 @@ from viz import (
 
 MASK_FILE = "ocean_mask.npz"
 
-
 # =========================================================
 # SAFE NUMPY CONVERSION
 # =========================================================
@@ -38,7 +35,6 @@ def to_numpy(x):
     if torch.is_tensor(x):
         return x.cpu().numpy()
     return x
-
 
 # =========================================================
 # METRICS LOGGER
@@ -168,7 +164,6 @@ def ensure_ocean_mask():
 
     logger.info("Ocean mask built")
 
-
 # =========================================================
 # DATASET BUILDERS
 # =========================================================
@@ -233,12 +228,11 @@ def run_pipeline(args):
     run_dir = create_run_dir()
 
     # initialize logger AFTER run dir exists
-    from core import create_logger
-    logger = create_logger(run_dir)
-    
-    logger.info("================================================")
-    logger.info("ERA5 HEAT FLUX PINN TRAINING PIPELINE START")
-    logger.info("================================================")
+    run_logger = create_logger(run_dir)
+
+    run_logger.info("================================================")
+    run_logger.info("ERA5 HEAT FLUX PINN TRAINING PIPELINE START")
+    run_logger.info("================================================")
 
     start_time = time.time()
 
@@ -247,24 +241,24 @@ def run_pipeline(args):
 
     ensure_ocean_mask()
 
-    logger.info("Creating run directory")
+    run_logger.info("Creating run directory")
 
-    logger.info(f"Run directory: {run_dir}")
+    run_logger.info(f"Run directory: {run_dir}")
 
     args_file = os.path.join(run_dir, "args.json")
 
     with open(args_file, "w") as f:
         json.dump(vars(args), f, indent=2)
 
-    logger.info("Run arguments saved")
+    run_logger.info("Run arguments saved")
 
-    metrics_logger = MetricsLogger(run_dir)
+    metrics_run_logger = Metricsrun_Logger(run_dir)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    logger.info(f"Using device: {device}")
+    run_logger.info(f"Using device: {device}")
 
-    logger.info("Initializing model")
+    run_logger.info("Initializing model")
 
     model = OceanHeatFluxPINN(
         input_dim=7,
@@ -280,30 +274,30 @@ def run_pipeline(args):
         run_dir=run_dir
     )
 
-    logger.info("Model initialized")
+    run_logger.info("Model initialized")
 
     global_eda = GlobalEDA(run_dir)
 
-    logger.info("Building validation dataset")
+    run_logger.info("Building validation dataset")
 
     X_val, Y_val = build_validation_dataset(args)
 
-    logger.info("Building test dataset")
+    run_logger.info("Building test dataset")
 
     X_test, Y_test, lat_test, lon_test = build_test_dataset(args)
 
-    logger.info(f"Validation dataset size: {len(X_val)}")
-    logger.info(f"Test dataset size: {len(X_test)}")
+    run_logger.info(f"Validation dataset size: {len(X_val)}")
+    run_logger.info(f"Test dataset size: {len(X_test)}")
 
-    logger.info("Starting training loop")
+    run_logger.info("Starting training loop")
 
     for epoch in range(args.epochs):
 
-        logger.info("------------------------------------------------")
-        logger.info(f"Epoch {epoch+1}/{args.epochs}")
-        logger.info("------------------------------------------------")
+        run_logger.info("------------------------------------------------")
+        run_logger.info(f"Epoch {epoch+1}/{args.epochs}")
+        run_logger.info("------------------------------------------------")
 
-        metrics_logger.start_epoch(epoch)
+        metrics_run_logger.start_epoch(epoch)
 
         sampler_args = argparse.Namespace(
             sampler=args.sampler,
@@ -335,7 +329,7 @@ def run_pipeline(args):
             X = batch["X"]
             Y = batch["Y"]
 
-            logger.info(f"Training batch {batch_id}")
+            run_logger.info(f"Training batch {batch_id}")
 
             losses = trainer.train_batch(
                 X,
@@ -343,7 +337,7 @@ def run_pipeline(args):
                 epoch
             )
 
-            metrics_logger.log_batch(
+            metrics_run_logger.log_batch(
                 epoch,
                 batch_id,
                 losses["total"],
@@ -355,7 +349,7 @@ def run_pipeline(args):
             epoch_data.append(losses["data"])
             epoch_phys.append(losses["physics"])
 
-            logger.info(
+            run_logger.info(
                 f"Loss total={losses['total']:.6f} "
                 f"data={losses['data']:.6f} "
                 f"physics={losses['physics']:.6f}"
@@ -365,7 +359,7 @@ def run_pipeline(args):
 
             if batch_id % args.eda_interval == 0:
 
-                logger.info(
+                run_logger.info(
                     f"Running EDA for epoch {epoch} batch {batch_id}"
                 )
 
@@ -387,7 +381,7 @@ def run_pipeline(args):
 
                 except Exception as e:
 
-                    logger.warning(f"EDA failed: {e}")
+                    run_logger.warning(f"EDA failed: {e}")
 
             clear_memory()
 
@@ -399,7 +393,7 @@ def run_pipeline(args):
 
         val_loss = trainer.validate(X_val, Y_val)
 
-        logger.info(
+        run_logger.info(
             f"Epoch summary → "
             f"train={epoch_loss:.6f} "
             f"data={epoch_data_loss:.6f} "
@@ -407,7 +401,7 @@ def run_pipeline(args):
             f"val={val_loss:.6f}"
         )
 
-        metrics_logger.log_epoch(
+        metrics_run_logger.log_epoch(
             epoch,
             epoch_loss,
             epoch_data_loss,
@@ -422,26 +416,26 @@ def run_pipeline(args):
 
     # ---------- TRAINING COMPLETE ----------
 
-    logger.info("Training finished")
+    run_logger.info("Training finished")
 
-    logger.info("Finalizing global EDA")
+    run_logger.info("Finalizing global EDA")
 
     try:
         global_eda.finalize()
     except Exception as e:
-        logger.warning(f"Global EDA failed: {e}")
+        run_logger.warning(f"Global EDA failed: {e}")
 
     trainer.save_final()
 
-    metrics_logger.save_history()
+    metrics_run_logger.save_history()
 
     runtime = time.time() - start_time
 
-    logger.info(f"Training runtime: {runtime/60:.2f} minutes")
+    run_logger.info(f"Training runtime: {runtime/60:.2f} minutes")
 
     # ---------- MODEL EVALUATION ----------
 
-    logger.info("Running final model evaluation")
+    run_logger.info("Running final model evaluation")
 
     model = trainer.model
     model.eval()
@@ -452,7 +446,7 @@ def run_pipeline(args):
 
         pred = model(X_t).cpu().numpy()
 
-    logger.info("Generating evaluation plots")
+    run_logger.info("Generating evaluation plots")
 
     plot_prediction_scatter(Y_test, pred, run_dir)
     plot_residuals(Y_test, pred, run_dir)
@@ -462,9 +456,9 @@ def run_pipeline(args):
 
     generate_all_plots(run_dir)
 
-    logger.info("================================================")
-    logger.info("PIPELINE COMPLETE")
-    logger.info("================================================")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
+    run_logger.info("================================================")
+    run_logger.info("PIPELINE COMPLETE")
+    run_logger.info("================================================")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
 # =========================================================
 # ARGUMENTS
 # =========================================================
