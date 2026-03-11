@@ -50,12 +50,12 @@ def create_run_dir(base="runs"):
     os.makedirs(os.path.join(run_dir, "metrics"), exist_ok=True)
     os.makedirs(os.path.join(run_dir, "epochs"), exist_ok=True)
     os.makedirs(os.path.join(run_dir, "plots"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "models"), exist_ok=True)
+    # os.makedirs(os.path.join(run_dir, "models"), exist_ok=True)
 
-    # EDA hierarchy
-    os.makedirs(os.path.join(run_dir, "eda"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "eda", "epochs"), exist_ok=True)
-    os.makedirs(os.path.join(run_dir, "eda", "global"), exist_ok=True)
+    # # EDA hierarchy
+    # os.makedirs(os.path.join(run_dir, "eda"), exist_ok=True)
+    # os.makedirs(os.path.join(run_dir, "eda", "epochs"), exist_ok=True)
+    # os.makedirs(os.path.join(run_dir, "eda", "global"), exist_ok=True)
 
     meta = {
         "created": now(),
