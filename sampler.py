@@ -196,6 +196,7 @@ def sample_time_slice(paths,ys,xs,grid_idx,t):
     flux=np.abs(Y[:,0])+np.abs(Y[:,1])
 
     times=np.repeat(ds_i[tdim].values[t],len(grid_idx))
+    times=times.astype("datetime64[s]").astype(np.int64)
 
     return X,Y,flux,times
 

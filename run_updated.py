@@ -313,8 +313,7 @@ def run_pipeline(args):
         loader = DataLoader(
             dataset,
             batch_size=None,
-            num_workers=2,
-            collate_fn=lambda x: x[0]
+            num_workers=2
         )
 
         epoch_total = []

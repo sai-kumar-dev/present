@@ -137,7 +137,7 @@ class BatchEDA:
         self.lat=np.asarray(batch["lat"])
         self.lon=np.asarray(batch["lon"])
 
-        self.time=pd.to_datetime(batch["time"])
+        self.time=pd.to_datetime(batch["time"], unit="s")
 
         self.X_raw=self.X*INPUT_SCALE
         self.Y_raw=self.Y*TARGET_SCALE
