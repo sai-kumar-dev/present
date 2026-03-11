@@ -277,7 +277,220 @@ def evaluate_model(model, X, Y, device, run_dir):
 
     logger.info("Evaluation complete")
 
+def detailed_flux_diagnostics(y_true, y_pred, lat, lon, run_dir):
 
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    sns.set_style("whitegrid")
+
+    fig_dir = os.path.join(run_dir, "plots")
+    os.makedirs(fig_dir, exist_ok=True)
+
+    sshf_true = y_true[:,0]
+    slhf_true = y_true[:,1]
+
+    sshf_pred = y_pred[:,0]
+    slhf_pred = y_pred[:,1]
+
+    sshf_err = sshf_pred - sshf_true
+    slhf_err = slhf_pred - slhf_true
+
+    # ------------------------------------------------
+    # 1. Actual vs Predicted (SSHF)
+    # ------------------------------------------------
+
+    plt.figure(figsize=(7,7))
+
+    plt.scatter(
+        sshf_true,
+        sshf_pred,
+        s=10,
+        alpha=0.4,
+        label="samples"
+    )
+
+    lim_min = min(sshf_true.min(), sshf_pred.min())
+    lim_max = max(sshf_true.max(), sshf_pred.max())
+
+    plt.plot(
+        [lim_min, lim_max],
+        [lim_min, lim_max],
+        linestyle="--",
+        linewidth=2,
+        label="perfect prediction"
+    )
+
+    plt.xlabel("True Sensible Heat Flux (Normalized)")
+    plt.ylabel("Predicted Sensible Heat Flux (Normalized)")
+    plt.title("Model Skill: Predicted vs True Sensible Heat Flux")
+
+    plt.legend()
+
+    plt.savefig(os.path.join(fig_dir,"sshf_actual_vs_pred.png"))
+    plt.close()
+
+    # ------------------------------------------------
+    # 2. Actual vs Predicted (SLHF)
+    # ------------------------------------------------
+
+    plt.figure(figsize=(7,7))
+
+    plt.scatter(
+        slhf_true,
+        slhf_pred,
+        s=10,
+        alpha=0.4,
+        label="samples"
+    )
+
+    lim_min = min(slhf_true.min(), slhf_pred.min())
+    lim_max = max(slhf_true.max(), slhf_pred.max())
+
+    plt.plot(
+        [lim_min, lim_max],
+        [lim_min, lim_max],
+        linestyle="--",
+        linewidth=2,
+        label="perfect prediction"
+    )
+
+    plt.xlabel("True Latent Heat Flux (Normalized)")
+    plt.ylabel("Predicted Latent Heat Flux (Normalized)")
+    plt.title("Model Skill: Predicted vs True Latent Heat Flux")
+
+    plt.legend()
+
+    plt.savefig(os.path.join(fig_dir,"slhf_actual_vs_pred.png"))
+    plt.close()
+
+    # ------------------------------------------------
+    # 3. Residual vs True Value
+    # ------------------------------------------------
+
+    plt.figure(figsize=(7,5))
+
+    plt.scatter(
+        sshf_true,
+        sshf_err,
+        s=8,
+        alpha=0.4
+    )
+
+    plt.axhline(0,color="black",linestyle="--")
+
+    plt.xlabel("True Sensible Heat Flux")
+    plt.ylabel("Prediction Error (Predicted − True)")
+    plt.title("Residual Analysis: Sensible Heat Flux")
+
+    plt.savefig(os.path.join(fig_dir,"sshf_residual_vs_true.png"))
+    plt.close()
+
+    plt.figure(figsize=(7,5))
+
+    plt.scatter(
+        slhf_true,
+        slhf_err,
+        s=8,
+        alpha=0.4
+    )
+
+    plt.axhline(0,color="black",linestyle="--")
+
+    plt.xlabel("True Latent Heat Flux")
+    plt.ylabel("Prediction Error (Predicted − True)")
+    plt.title("Residual Analysis: Latent Heat Flux")
+
+    plt.savefig(os.path.join(fig_dir,"slhf_residual_vs_true.png"))
+    plt.close()
+
+    # ------------------------------------------------
+    # 4. Spatial Error Map
+    # ------------------------------------------------
+
+    total_error = np.abs(sshf_err) + np.abs(slhf_err)
+
+    plt.figure(figsize=(10,5))
+
+    sc = plt.scatter(
+        lon,
+        lat,
+        c=total_error,
+        s=12,
+        cmap="magma",
+        alpha=0.8
+    )
+
+    plt.colorbar(sc,label="Total Flux Error Magnitude")
+
+    plt.xlabel("Longitude (degrees)")
+    plt.ylabel("Latitude (degrees)")
+    plt.title("Geographic Distribution of Prediction Error")
+
+    plt.savefig(os.path.join(fig_dir,"spatial_error_map.png"))
+    plt.close()
+
+    # ------------------------------------------------
+    # 5. Catastrophic Failure Map
+    # ------------------------------------------------
+
+    threshold = np.percentile(total_error,95)
+
+    bad = total_error > threshold
+
+    plt.figure(figsize=(10,5))
+
+    plt.scatter(
+        lon[~bad],
+        lat[~bad],
+        s=8,
+        alpha=0.3,
+        label="normal predictions"
+    )
+
+    plt.scatter(
+        lon[bad],
+        lat[bad],
+        s=20,
+        color="red",
+        label="catastrophic errors"
+    )
+
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+
+    plt.title("Locations of Severe Model Errors (Top 5%)")
+
+    plt.legend()
+
+    plt.savefig(os.path.join(fig_dir,"catastrophic_error_map.png"))
+    plt.close()
+
+    # ------------------------------------------------
+    # 6. Skill Classification Map
+    # ------------------------------------------------
+
+    good = total_error < np.percentile(total_error,50)
+    moderate = (total_error >= np.percentile(total_error,50)) & (total_error < np.percentile(total_error,85))
+    bad = total_error >= np.percentile(total_error,85)
+
+    plt.figure(figsize=(10,5))
+
+    plt.scatter(lon[good],lat[good],s=8,label="good prediction")
+    plt.scatter(lon[moderate],lat[moderate],s=8,label="moderate error")
+    plt.scatter(lon[bad],lat[bad],s=12,color="red",label="poor prediction")
+
+    plt.xlabel("Longitude")
+    plt.ylabel("Latitude")
+
+    plt.title("Prediction Skill Classification Map")
+
+    plt.legend()
+
+    plt.savefig(os.path.join(fig_dir,"skill_classification_map.png"))
+    plt.close()
 # ------------------------------------------------
 # MASTER VISUALIZATION
 # ------------------------------------------------

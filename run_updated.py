@@ -22,7 +22,8 @@ from viz import (
     plot_prediction_scatter,
     plot_residuals,
     plot_flux_map,
-    plot_all_predictions
+    plot_all_predictions,
+    detailed_flux_diagnostics
 )
 
 MASK_FILE = "ocean_mask.npz"
@@ -450,6 +451,7 @@ def run_pipeline(args):
 
     plot_prediction_scatter(Y_test, pred, run_dir)
     plot_residuals(Y_test, pred, run_dir)
+    detailed_flux_diagnostics(Y_test,pred,lat_test,lon_test,run_dir)
     plot_flux_map(lat_test, lon_test, pred[:,0], run_dir, name="sshf_map")
     plot_flux_map(lat_test, lon_test, pred[:,1], run_dir, name="slhf_map")
     plot_all_predictions(Y_test, pred, run_dir)
