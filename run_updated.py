@@ -379,7 +379,16 @@ def run_pipeline(args):
 
                 try:
 
-                    batch_eda = BatchEDA(batch, run_dir)
+                    eda_epoch_dir = os.path.join(
+                            run_dir,
+                            "epochs",
+                            f"epoch_{epoch:03d}",
+                            "eda"
+                        )
+
+                    os.makedirs(eda_epoch_dir, exist_ok=True)
+
+                    batch_eda = BatchEDA(batch, eda_epoch_dir)
 
                     batch_eda.run_all()
 
